@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vote on Business Owners</title>
+    <meta name="description" content="Voting on business owners.">
+    <link rel="icon" type="image/png" sizes="32x32" href="romogi-favicons/favicon-32x32.png">
+    <link rel="manifest" href="romogi-favicons/site.webmanifest">
+        <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: rgb(220, 220, 220);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            text-align: center;
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            display: none;
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+
+        .button, #submitButton {
+            padding: 10px 20px;
+            margin: 10px;
+            border: none;
+            border-radius: 5px;
+            font-size: 18px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        .button:hover, #submitButton:hover {
+            background-color: rgb(200, 200, 200);
+        }
+        #submitButton {
+            background-color: rgb(70, 130, 180);
+            color: white;
+        }
+        #backButton, #forwardButton {
+            padding: 10px 20px;
+            margin: 10px;
+            border: none;
+            border-radius: 5px;
+            font-size: 15px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        #backButton:hover, #forwardButton:hover {
+            background-color: rgb(200, 200, 200); 
+            color: black;
+        }
+
+        input {
+            padding: 10px;
+            font-size: 16px;
+            width: 80%;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="voteContainer" class="container" style="display: block;">
+        <h1>I propose for the quantity of my country’s business owners to:</h1>
+        <button class="button" onclick="selectVote(1)">+1</button>
+        <button class="button" onclick="selectVote(0)">±0</button>
+        <button class="button" onclick="selectVote(-1)">-1</button>
+        <br>
+        <button id="submitButton" onclick="submitVote()">VOTE</button>
+        <p id="voteMessage"></p>
+        <div>           
+            <button id="forwardButton" onclick="goForward()">&gt;</button>
+        </div>
+    </div>
+
+    <div id="nominationContainer" class="container">
+        <h1>I propose _____ to be a business owner starting from the next meeting:</h1>
+        <input type="text" id="nomineeName" placeholder="Enter nominee's name">
+        <button id="submitButton" onclick="submitNomination()">NOMINATE</button>
+        <p id="nominationMessage"></p>
+        <div>
+            <button id="backButton" onclick="goBack()" >&lt;</button>
+            <button id="forwardButton" onclick="goForward()" >&gt;</button>
+        </div>
+    </div>
+
+    <div id="removalContainer" class="container">
+        <h1>I propose _____ to no longer be a business owner starting from the next meeting:</h1>
+        <input type="text" id="removeName" placeholder="Enter the name of the owner to remove">
+        <button id="submitButton" onclick="submitRemoval()">NOMINATE</button>
+        <p id="removalMessage"></p>
+        <div>
+            <button id="backButton" onclick="goBack()" >&lt;</button>
+            <button id="forwardButton" onclick="goForward()" >&gt;</button>
+        </div>
+    </div>
+
+    <div id="featureContainer" class="container">
+        <h1>I propose to add the software feature:</h1>
+        <input type="text" id="featureInput" placeholder="Enter the proposed feature">
+        <button id="submitButton" onclick="submitFeature()">SUBMIT</button>
+        <p id="responseMessage"></p>
+        <p id="errorMessage"></p>
+        <div>
+            <button id="backButton" onclick="goBack()" >&lt;</button>
+            <button id="forwardButton" onclick="goForward()" >&gt;</button>
+        </div>
+    </div>
+
+    <div id="spendingContainer" class="container">
+        <h1>I propose that we spend:</h1>
+        <input type="number" id="amountInput" placeholder="Enter amount in dollars">
+        <h1>on:</h1>
+        <input type="text" id="purposeInput" placeholder="Enter purpose">
+        <button id="submitButton" onclick="submitProposal()">SUBMIT</button>
+        <p id="responseMessage"></p>
+        <p id="errorMessage"></p>
+        <div>
+            <button id="backButton" onclick="goBack()" >&lt;</button>
+            <button id="forwardButton" onclick="goForward()" >&gt;</button>
+        </div>
+    </div>
+
+    <div id="questionContainer" class="container">
+        <h1>I want to ask if:</h1>
+        <input type="text" id="questionInput" placeholder="Enter your question">
+        <button id="submitButton" onclick="submitQuestion()">SUBMIT</button>
+        <p id="responseMessage"></p>
+        <div>
+            <button id="backButton" onclick="goBack()" >&lt;</button>
+            <button id="forwardButton" onclick="goForward()" >&gt;</button>
+        </div>
+    </div>
+
+    <div id="electionContainer" class="container">
+        <h1>I propose that our next election will be in:</h1>
+        <input type="number" id="weeksInput" min="1" max="24" placeholder="Enter weeks (1-24)">
+        <p>For the 24-hour period starting at UTC 00:00:00</p>
+        <button id="submitButton" onclick="submitElectionProposal()">SUBMIT</button>
+        <p id="responseMessage"></p>
+        <p id="errorMessage"></p>
+        <div>
+            <button id="backButton" onclick="goBack()" >&lt;</button>
+            <button id="forwardButton" onclick="goForward()" >&gt;</button>
+        </div>
+    </div>
+
+    <div id="thresholdContainer" class="container">
+        <h1>I propose that the number of votes needed for change is:</h1>
+        <p>numerator / #business owners</p>
+        <input type="number" id="numeratorInput" placeholder="Enter the numerator" min="1" step="1">
+        <button id="submitButton" onclick="submitThreshold()">SUBMIT</button>
+        <p id="responseMessage"></p>
+        <p id="errorMessage"></p>
+        <div>
+            <button id="backButton" onclick="goBack()" >&lt;</button>
+        </div>
+    </div>
+
+    <div id="thankYouContainer" class="container">
+        <h1 style="font-size: 32px; font-weight: bold;">Thank you!</h1>
+    </div>
+    <script src="./src/main.js" type="module"></script>
+</body>
+</html>

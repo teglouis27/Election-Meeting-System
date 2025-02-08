@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checkout</title>
+    <meta name="description" content="This webpage is to search for products to purchase without any deception.">
+    <link rel="apple-touch-icon" sizes="180x180" href="https://romogi.com/romogi-favicons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="https://romogi.com/romogi-favicons/favicon-32x32.png">
+    <link rel="manifest" href="https://romogi.com/romogi-favicons/site.webmanifest">
+    <link rel="shortcut icon" href="https://romogi.com/romogi-favicons/favicon.ico" type="image/x-icon">
+    <script src="https://unpkg.com/htmx.org@1.7.0"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+</head>
+  
+  <body>
+    <div id="app">
+        <main 
+            x-data="{ 
+                async doLogin(){
+                    const email = document.getElementById('login-email').value;
+                    const password = document.getElementById('login-password').value;
+                    await window.login(email, password);
+                },
+                async goToSignup(){
+                    alert('Signup functionality not implemented');
+                }
+            }" x-init=""
+        >
+            <div class="loader loader--style6" title="5" id="loginLoader">
+            <svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+                x="0px" y="0px" width="24px" height="30px" viewBox="0 0 24 30" style="enable-background:new 0 0 50 50;"
+                xml:space="preserve">
+                <rect x="0" y="13" width="4" height="5" fill="#333">
+                <animate attributeName="height" attributeType="XML" values="5;21;5" begin="0s" dur="0.6s"
+                    repeatCount="indefinite" />
+                <animate attributeName="y" attributeType="XML" values="13; 5; 13" begin="0s" dur="0.6s"
+                    repeatCount="indefinite" />
+                </rect>
+                <rect x="10" y="13" width="4" height="5" fill="#333">
+                <animate attributeName="height" attributeType="XML" values="5;21;5" begin="0.15s" dur="0.6s"
+                    repeatCount="indefinite" />
+                <animate attributeName="y" attributeType="XML" values="13; 5; 13" begin="0.15s" dur="0.6s"
+                    repeatCount="indefinite" />
+                </rect>
+                <rect x="20" y="13" width="4" height="5" fill="#333">
+                <animate attributeName="height" attributeType="XML" values="5;21;5" begin="0.3s" dur="0.6s"
+                    repeatCount="indefinite" />
+                <animate attributeName="y" attributeType="XML" values="13; 5; 13" begin="0.3s" dur="0.6s"
+                    repeatCount="indefinite" />
+                </rect>
+            </svg>
+            </div>
+            <form id="accountform">
+            <img class="main_logo" src="/public/images/romogi_icon.png" />
+            <h1>Login</h1>
+            <div class="inset">
+                <p>
+                <label for="email">EMAIL ADDRESS</label>
+                <input type="text" name="email" id="login-email" required>
+                </p>
+                <p>
+                <label for="password">PASSWORD</label>
+                <input type="password" name="password" id="login-password" required>
+                </p>
+            </div>
+            <p class="p-container">
+            <span class="forgothovermove" id="create-acc" x-on:click="goToSignup()">Sign up </span>
+            <input type="button" name="go" id="go" value="Login" x-on:click="doLogin()">
+        </p>
+            </form>
+        </main>
+    </div>
+    <script src="./src/main.js" type="module"></script>
+    </body>
+</html>

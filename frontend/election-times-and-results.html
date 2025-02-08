@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Polling Results and Election Times</title>
+<script type="module">
+    import { setupClock } from './src/clockModule.js';
+
+    window.onload = setupClock;  // Call function setupClock when loaded completely
+</script>
+<script src="https://cdn.jsdelivr.net/npm/luxon@2.4.0/build/global/luxon.min.js"></script>
+<style>
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    font-family: Arial, sans-serif;
+    background-color: #f9f9f9;
+.tablenest { display: flex; align-items: center; height: 100%; justify-content: center; }
+
+.container {
+    display: flex;
+    flex-direction: row;
+    height: 100vh;
+}
+
+.left-half {
+    width: 33.3333%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.right-half {
+    width: 66.6666%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.polling-results-container, .election-times-container { position: relative; height: 80%; 
+    padding: 40px 20px 60px 20px;
+    border-radius: 10px;
+    box-shadow: 5px 5px 15px rgba(0, 0, 0, 0.1);
+    width: 90%;
+}
+
+.header {
+    font-size: 1.5em;
+    font-weight: bold;
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+.polling-results {
+    width: 100%;
+}
+
+.result-item {
+    margin-bottom: 20px;
+}
+
+.question {
+    font-size: 1em;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+.bar-container {
+    width: 100%;
+    background-color: #e0e0e0;
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.bar {
+    height: 20px;
+    text-align: center;
+    line-height: 20px;
+    color: white;
+    font-weight: bold;
+}
+
+.clock-container { top: 0;
+    width: 100px;
+}
+
+.clock-container.left { position: absolute; top: 10px; left: 10px;}
+
+.clock-container.right { position: absolute; top: 10px; right: 10px;}
+
+.CalendarTable {
+    display: table;
+    border-collapse: collapse;
+    margin-left: auto;
+    margin-right: auto;
+    box-shadow: 5px 5px 10px #999;
+    background-color: white;
+    width: 100%;
+}
+
+.CalendarTableRow, .ButtonTableRow {
+    display: table-row;
+}
+
+.CalendarHeaderCell, .CalendarCell, .GrayCalendarCell, .ButtonCell {
+    display: table-cell;
+    border: 2px solid #000;
+    text-align: center;
+    vertical-align: middle;
+    font-weight: bold;
+    color: black;
+}
+
+.ButtonCell {
+    height: 2.5em;
+    padding: .5em;
+}
+
+.CalendarHeaderCell {
+    height: 2em;
+    font-size: 1.5em;
+    background-color: #f0f0f0;
+}
+
+.CalendarCell, .GrayCalendarCell {
+    height: 4em;
+    width: 4em;
+    background-color: white;
+}
+
+.GrayCalendarCell {
+    color: #a0a0a0;
+    background-color: #f9f9f9;
+}
+.greencss3button { 
+    font-size: 1em;
+   font-weight: bold;
+   font-family: arial;
+   color: black;
+   padding: .01em;
+   background: #e0e0e0;
+   border-radius: 10px;
+   border: 1px solid #b0b0b0;
+   box-shadow:
+      5px 5px 15px rgba(0, 0, 0, 0.15),
+      -5px -5px 15px rgba(255, 255, 255, 0.8);
+   text-shadow:
+      0px -.5px 0px rgba(100,100,100,0.4),
+      0px .5px 0px rgba(200,200,200,0.4);
+   cursor: pointer;
+   margin: 0;
+   transition: all 0.2s ease;
+   height: 90%;
+   width: 100%;
+   
+}
+
+#changeTimeZoneBtn {
+    font-size: 1em;
+   font-weight: bold;
+   font-family: arial;
+   color: black;
+   padding: .01em;
+   background: #e0e0e0;
+   border-radius: 10px;
+   border: 1px solid #b0b0b0;
+   box-shadow:
+      5px 5px 15px rgba(0, 0, 0, 0.15),
+      -5px -5px 15px rgba(255, 255, 255, 0.8);
+   text-shadow:
+      0px -.5px 0px rgba(100,100,100,0.4),
+      0px .5px 0px rgba(200,200,200,0.4);
+   cursor: pointer;
+   margin: 0;
+   transition: all 0.2s ease;
+   height: 90%;
+   width: 100%;
+}
+
+#timeZoneDropdown {
+    display: none; 
+    position: absolute;
+    bottom: 5%; 
+    left: 50%; 
+    transform: translateX(-50%);
+    font-size: 1em;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    padding: 0;
+    z-index: 1000; 
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2); 
+    overflow-y: auto;
+    max-height: calc(100vh / 3);
+    width: max-content;
+    animation: dropdownUnfurl 0.4s ease-out;
+}
+
+#timeZoneDropdown div:hover {
+    background-color: #e0e0e0;
+}
+@keyframes dropdownUnfurl {
+    0% {
+        max-height: 0;
+        opacity: 0;
+        transform: scaleY(0.8);
+    }
+    100% {
+        max-height: 500px;
+        opacity: 1;
+        transform: scaleY(1);
+    }
+}
+
+
+</style>
+</head>
+<body>
+<div class="container">
+    <div class="left-half">
+        <div class="polling-results-container">
+            <div class="header">Polling Results</div>
+            <div class="polling-results" id="pollingResults">
+                <!-- Results will be dynamically added here -->
+            </div>
+        </div>
+    </div>
+    <div class="right-half">
+        <div class="election-times-container">
+            <div class="clock-container left">
+  <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+      <!-- Clock face -->
+      <circle cx="50" cy="50" r="48" fill="white" stroke="black" stroke-width="2"/>
+
+      <!-- Group for tick marks -->
+      <g id="tickMarksLeft"></g>
+
+      
+
+      <!-- Hands -->
+      <!-- Hour hand -->
+      <path id="hourHandLeft" d="M50 50 L50 30" stroke="black" stroke-width="3"/>
+      
+      <!-- Minute hand -->
+      <path id="minuteHandLeft" d="M50 50 L50 20" stroke="black" stroke-width="2"/>
+      
+      <!-- Second hand -->
+      <path id="secondHandLeft" d="M50 50 L50 15" stroke="red" stroke-width="1"/>
+
+      <!-- Center dot -->
+      <circle cx="50" cy="50" r="1" fill="black"/>
+   </svg>
+            </div>
+            <div class="clock-container right">
+  <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+      <!-- Clock face -->
+      <circle cx="50" cy="50" r="48" fill="white" stroke="black" stroke-width="2"/>
+
+      <!-- Group for tick marks -->
+      <g id="tickMarksRight"></g>
+
+      
+
+      <!-- Hands -->
+      <!-- Hour hand -->
+      <path id="hourHandRight" d="M50 50 L50 30" stroke="black" stroke-width="3"/>
+      
+      <!-- Minute hand -->
+      <path id="minuteHandRight" d="M50 50 L50 20" stroke="black" stroke-width="2"/>
+      
+      <!-- Second hand -->
+      <path id="secondHandRight" d="M50 50 L50 15" stroke="red" stroke-width="1"/>
+
+      <!-- Center dot -->
+      <circle cx="50" cy="50" r="1" fill="black"/>
+   </svg>
+            </div>
+            <div class="header">Election Times</div>
+            <div class="tablenest">
+                <table class="CalendarTable">
+                    <tr class="CalendarTableRow">
+                        <td class="CalendarHeaderCell" colspan="7" id="calendarHeader"> </td>
+                    </tr>
+                    <tr class="CalendarTableRow">
+                        <td class="CalendarHeaderCell">Sunday</td>
+                        <td class="CalendarHeaderCell">Monday</td>
+                        <td class="CalendarHeaderCell">Tuesday</td>
+                        <td class="CalendarHeaderCell">Wednesday</td>
+                        <td class="CalendarHeaderCell">Thursday</td>
+                        <td class="CalendarHeaderCell">Friday</td>
+                        <td class="CalendarHeaderCell">Saturday</td>
+                    </tr>
+                    <tbody id="calendarBody">
+                    </tbody>
+                    <tr class="ButtonTableRow">
+                        <td class="ButtonCell" colspan="2">
+                            <button class="greencss3button" onclick="window.previousMonth()">Previous Month</button>
+                        </td>
+                        <td class="ButtonCell" colspan="3">
+                            <button id="changeTimeZoneBtn">Change Time Zone</button>
+                            <div id="timeZoneDropdown" style="display: none;">
+                                <!-- Time zone options will be dynamically added here -->
+                            </div>
+                        </td>          
+                        <td class="ButtonCell" colspan="2">
+                            <button class="greencss3button" onclick="window.nextMonth()">Next Month</button>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="./src/main.js" type="module"></script>
+
+  
+</body>
+</html>
