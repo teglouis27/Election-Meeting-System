@@ -73,28 +73,77 @@ window.login = async function (email, password) {
     }
 };
 
-async function SaveVote(type, value) {
+// เพิ่มฟังก์ชันใหม่สำหรับเก็บข้อมูลทั้งหมด
+async function submitAllSurvey() {
+    const surveyData = {
+        instance_id: 1, // ต้องกำหนดตามความเหมาะสม
+        response_data: {
+            vote: {
+                question_type: "vote",
+                question_text: "I propose for the quantity of my country's business owners to:",
+                response_value: selectedVote.toString()
+            },
+            nomination: {
+                question_type: "nomination",
+                question_text: document.getElementById("nomineeName") ? 
+                    "I propose _____ to be a business owner starting from the next meeting:" :
+                    "I propose _____ to no longer be a business owner starting from the next meeting:",
+                response_value: document.getElementById("nomineeName")?.value || 
+                              document.getElementById("removeName")?.value || ""
+            },
+            feature: {
+                question_type: "feature",
+                question_text: "I propose to add the software feature:",
+                response_value: document.getElementById("featureInput")?.value || ""
+            },
+            spending: {
+                question_type: "spending",
+                question_text: "I propose that we spend:",
+                response_value: `${document.getElementById("amountInput")?.value || ""} for ${document.getElementById("purposeInput")?.value || ""}`
+            },
+            question: {
+                question_type: "question",
+                question_text: "I want to ask if:",
+                response_value: document.getElementById("questionInput")?.value || ""
+            },
+            election: {
+                question_type: "election",
+                question_text: "I propose that our next election will be in:",
+                response_value: `${document.getElementById("weeksInput")?.value || ""} weeks`
+            },
+            threshold: {
+                question_type: "threshold",
+                question_text: "I propose that the number of votes needed for change is:",
+                response_value: document.getElementById("numeratorInput")?.value || ""
+            }
+        }
+    };
+
     try {
-        const response = await fetch('http://localhost:8080/survey', {
+        const response = await fetch('http://localhost:8080/save-survey', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                type: type,
-                value: value
-            })
+            body: JSON.stringify(surveyData)
         });
-        
+
         if (!response.ok) {
-            throw new Error('Failed to save vote');
+            throw new Error('Failed to save survey');
         }
-        
-        return await response.json();
+
+        const result = await response.json();
+        document.getElementById('thankYouMessage').textContent = "Thank you! Your survey has been submitted.";
+        showNext('thankYouContainer');
     } catch (err) {
-        throw new Error('Failed to save vote: ' + err.message);
+        console.error('Failed to save survey:', err);
+        alert('Failed to save survey. Please try again.');
     }
 }
+
+// เพิ่ม event listener สำหรับปุ่ม SUBMIT ALL
+document.getElementById('submitAllButton').addEventListener('click', submitAllSurvey);
+
 
 
 function showElectionPage() {
