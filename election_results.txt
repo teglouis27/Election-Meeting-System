@@ -1,7 +1,0 @@
-Vote: 1
-Nomination: Pongpipat
-Feature: Show factory
-Spending: $750 for new software
-Question: What do you think about this project?
-ElectionProposal: 4
-Threshold: 1

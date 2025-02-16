@@ -27,10 +27,7 @@ window.login = async function (email, password) {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                email: email,
-                password: password
-            })
+            body: JSON.stringify({ email, password }),
         });
         console.log("Raw response:", response);
 
@@ -40,109 +37,30 @@ window.login = async function (email, password) {
             throw new Error("Server did not return JSON");
         }
 
-        // พยายาม parse JSON response
-        let result;
-        try {
-            result = await response.json();
-            console.log("Parsed response:", result);
-        } catch (parseError) {
-            console.error("JSON Parse Error:", parseError);
-            throw new Error("Failed to parse server response");
-        }
+        const result = await response.json();
 
-        // ตรวจสอบ response status
-        if (!response.ok) {
-            throw new Error(result.error || 'Login failed');
-        }
+        if (response.ok) {
+            // บันทึก email ของผู้ใช้ไว้ใน localStorage หรือ sessionStorage
+            localStorage.setItem('userEmail', email);
 
-        // ตรวจสอบโครงสร้างของ result
-        if (!result.hasOwnProperty('message') || !result.hasOwnProperty('isMeetingDay')) {
-            throw new Error("Invalid response format");
-        }
-
-        alert(result.message);
-        
-        if (result.isMeetingDay) {
-            showSurveyPage();
+            // check redirectURL recieve from backend
+            if (result.redirectURL === '/survey') {
+                showSurveyPage();
+            } else if (result.redirectURL === '/election') {
+                showElectionPage();
+            } else {
+                // กรณีอื่นๆ (ถ้ามี)
+                console.error('Unexpected redirect URL:', result.redirectURL);
+            }
         } else {
-            showElectionPage();
+            // แสดงข้อความแจ้งเตือนกรณีล็อกอินไม่สำเร็จ
+            alert(result.error || 'Login failed. Please try again.');
         }
-    } catch (err) {
-        console.error("Login Error:", err);
-        alert(err.message || "Login failed. Please try again.");
+    } catch (error) {
+        console.error('Login error:', error);
+        alert('An error occurred during login. Please try again.');
     }
 };
-
-// เพิ่มฟังก์ชันใหม่สำหรับเก็บข้อมูลทั้งหมด
-async function submitAllSurvey() {
-    const surveyData = {
-        instance_id: 1, // ต้องกำหนดตามความเหมาะสม
-        response_data: {
-            vote: {
-                question_type: "vote",
-                question_text: "I propose for the quantity of my country's business owners to:",
-                response_value: selectedVote.toString()
-            },
-            nomination: {
-                question_type: "nomination",
-                question_text: document.getElementById("nomineeName") ? 
-                    "I propose _____ to be a business owner starting from the next meeting:" :
-                    "I propose _____ to no longer be a business owner starting from the next meeting:",
-                response_value: document.getElementById("nomineeName")?.value || 
-                              document.getElementById("removeName")?.value || ""
-            },
-            feature: {
-                question_type: "feature",
-                question_text: "I propose to add the software feature:",
-                response_value: document.getElementById("featureInput")?.value || ""
-            },
-            spending: {
-                question_type: "spending",
-                question_text: "I propose that we spend:",
-                response_value: `${document.getElementById("amountInput")?.value || ""} for ${document.getElementById("purposeInput")?.value || ""}`
-            },
-            question: {
-                question_type: "question",
-                question_text: "I want to ask if:",
-                response_value: document.getElementById("questionInput")?.value || ""
-            },
-            election: {
-                question_type: "election",
-                question_text: "I propose that our next election will be in:",
-                response_value: `${document.getElementById("weeksInput")?.value || ""} weeks`
-            },
-            threshold: {
-                question_type: "threshold",
-                question_text: "I propose that the number of votes needed for change is:",
-                response_value: document.getElementById("numeratorInput")?.value || ""
-            }
-        }
-    };
-
-    try {
-        const response = await fetch('http://localhost:8080/save-survey', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(surveyData)
-        });
-
-        if (!response.ok) {
-            throw new Error('Failed to save survey');
-        }
-
-        const result = await response.json();
-        document.getElementById('thankYouMessage').textContent = "Thank you! Your survey has been submitted.";
-        showNext('thankYouContainer');
-    } catch (err) {
-        console.error('Failed to save survey:', err);
-        alert('Failed to save survey. Please try again.');
-    }
-}
-
-// เพิ่ม event listener สำหรับปุ่ม SUBMIT ALL
-document.getElementById('submitAllButton').addEventListener('click', submitAllSurvey);
 
 
 
@@ -344,10 +262,81 @@ function submitThreshold() {
     if (numerator) {
         
         document.getElementById('responseMessage').textContent = `You proposed that the number of votes needed for change is: \( \frac{${numerator}}{#business owners} \).`;
-        setTimeout(() => showNext('thankYouContainer'), 1000);
+        submitAllSurvey();
            
     } else {
         document.getElementById('errorMessage').textContent = "Please enter a valid numerator.";
+    }
+}
+
+async function submitAllSurvey() {
+    const surveyData = {
+        response_data: {
+            vote: {
+                question_type: "vote",
+                question_text: "I propose for the quantity of my country's business owners to:",
+                response_value: selectedVote.toString()
+            },
+            nomination: {
+                question_type: "nomination",
+                question_text: document.getElementById("nomineeName") ? 
+                    "I propose _____ to be a business owner starting from the next meeting:" :
+                    "I propose _____ to no longer be a business owner starting from the next meeting:",
+                response_value: document.getElementById("nomineeName")?.value || 
+                              document.getElementById("removeName")?.value || ""
+            },
+            feature: {
+                question_type: "feature",
+                question_text: "I propose to add the software feature:",
+                response_value: document.getElementById("featureInput")?.value || ""
+            },
+            spending: {
+                question_type: "spending",
+                question_text: "I propose that we spend:",
+                response_value: `${document.getElementById("amountInput")?.value || ""} for ${document.getElementById("purposeInput")?.value || ""}`
+            },
+            question: {
+                question_type: "question",
+                question_text: "I want to ask if:",
+                response_value: document.getElementById("questionInput")?.value || ""
+            },
+            election: {
+                question_type: "election",
+                question_text: "I propose that our next election will be in:",
+                response_value: `${document.getElementById("weeksInput")?.value || ""} weeks`
+            },
+            threshold: {
+                question_type: "threshold",
+                question_text: "I propose that the number of votes needed for change is:",
+                response_value: document.getElementById("numeratorInput")?.value || ""
+            }
+        }
+    };
+
+    try {
+        const response = await fetch('http://localhost:8080/survey', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(surveyData)
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to save survey');
+        }
+
+        const result = await response.json();
+        //document.getElementById('thankYouMessage').textContent = "Thank you! Your survey has been submitted.";
+        showNext('thankYouContainer');
+
+        // Add a delay before redirecting to the election page
+        setTimeout(() => {
+            showElectionPage();
+        }, 3000); // 3 seconds delay
+    } catch (err) {
+        console.error('Failed to save survey:', err);
+        alert('Failed to save survey. Please try again.');
     }
 }
 
@@ -368,7 +357,5 @@ window.submitThreshold = submitThreshold;
 
 window.showElectionPage = showElectionPage;
 window.setTimeZone = setTimeZone;
-
-window.SaveVote = SaveVote;
 
 

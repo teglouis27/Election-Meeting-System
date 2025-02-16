@@ -25,7 +25,6 @@ type App struct {
 
 // สร้าง struct สำหรับรับข้อมูล survey
 type SurveyResponse struct {
-	InstanceID   int `json:"instance_id"`
 	ResponseData struct {
 		Vote struct {
 			QuestionType  string `json:"question_type"`
@@ -69,7 +68,7 @@ type SurveyResponse struct {
 func NewApp() *App {
 	return &App{
 		// You can set meeting date to any date you want
-		meetingDate: time.Date(2025, time.February, 12, 2, 0, 0, 0, time.FixedZone("UTC+7", 7*60*60)),
+		meetingDate: time.Date(2025, time.February, 16, 2, 0, 0, 0, time.FixedZone("UTC+7", 7*60*60)),
 		echo:        echo.New(),
 	}
 }
@@ -83,7 +82,6 @@ func (a *App) startup(ctx context.Context) error {
 
 	// Setup Echo routes
 	a.setupRoutes()
-
 	// Start Echo server with error handling
 	go func() {
 		if err := a.echo.Start(":8080"); err != nil {
@@ -97,10 +95,11 @@ func (a *App) startup(ctx context.Context) error {
 
 func (a *App) setupRoutes() {
 	a.echo.Use(middleware.CORS())
+	a.echo.Use(middleware.Recover())
+
 	a.echo.POST("/login", a.handleLogin)
-	a.echo.POST("/survey", a.handleSurvey)
+	a.echo.POST("/survey", a.handleSaveSurvey)
 	a.echo.GET("/election", a.handleElection)
-	a.echo.POST("/save-survey", a.handleSaveSurvey)
 }
 
 func (a *App) handleLogin(c echo.Context) error {
@@ -124,8 +123,17 @@ func (a *App) handleLogin(c echo.Context) error {
 	}
 
 	var storedPassword string
-	err := a.db.QueryRow("SELECT password FROM users WHERE email = ?", credentials.Email).Scan(&storedPassword)
-	if err != nil || storedPassword != credentials.Password {
+	var hasVoted bool
+	err := a.db.QueryRow("SELECT password, has_voted FROM users WHERE email = ?",
+		credentials.Email).Scan(&storedPassword, &hasVoted)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "User not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error: " + err.Error()})
+	}
+
+	if storedPassword != credentials.Password {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
 	}
 
@@ -134,49 +142,85 @@ func (a *App) handleLogin(c echo.Context) error {
 		now.Month() == a.meetingDate.Month() &&
 		now.Day() == a.meetingDate.Day()
 
+	redirectURL := "/survey"
+	if hasVoted {
+		redirectURL = "/election"
+	}
+
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"message":      "Login successful",
 		"isMeetingDay": isMeetingDay,
-		"data":         nil,
+		"redirectURL":  redirectURL,
 	})
 }
 
 func (a *App) handleSaveSurvey(c echo.Context) error {
+	fmt.Println("Received save-survey request")
+	// Get user email from the request (you might need to add this to the request)
+	userEmail := c.Get("user_email").(string)
+
+	var user struct {
+		ID       int
+		HasVoted bool
+	}
+	err := a.db.QueryRow("SELECT id, has_voted FROM users WHERE email = ?", userEmail).Scan(&user.ID, &user.HasVoted)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+	}
+
+	if user.HasVoted {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "You have already voted"})
+	}
+
 	var survey SurveyResponse
 	if err := c.Bind(&survey); err != nil {
+		fmt.Printf("Error binding request: %v\n", err)
 		return c.JSON(http.StatusBadRequest, map[string]string{
 			"error": "Invalid request format: " + err.Error(),
 		})
 	}
+	fmt.Printf("Received survey data: %+v\n", survey)
 
-	// แปลง response_data เป็น JSON string
-	responseDataJSON, err := json.Marshal(survey.ResponseData)
+	prettyJSON, err := json.MarshalIndent(survey.ResponseData, "", "  ")
 	if err != nil {
+		fmt.Printf("Error marshaling response data: %v\n", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to process survey data",
 		})
 	}
+	fmt.Printf("Pretty Marshaled JSON:\n%s\n", string(prettyJSON))
 
-	// บันทึกลงฐานข้อมูล
-	query := `INSERT INTO survey_responses (instance_id, response_data) VALUES (?, ?)`
-	result, err := a.db.Exec(query, survey.InstanceID, string(responseDataJSON))
+	voteChoice, err := json.Marshal(survey.ResponseData)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "Failed to save survey: " + err.Error(),
-		})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to process survey data"})
 	}
 
-	id, _ := result.LastInsertId()
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message": "Survey saved successfully",
-		"id":      id,
-	})
-}
+	tx, err := a.db.Begin()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Transaction error"})
+	}
+	defer tx.Rollback()
 
-func (a *App) handleSurvey(c echo.Context) error {
-	// Handle survey data
-	return c.JSON(http.StatusOK, map[string]string{
-		"data": "Survey data goes here",
+	_, err = tx.Exec(`
+		INSERT INTO user_votes (user_id, vote_choice, vote_timestamp)
+		VALUES (?, ?, CURRENT_TIMESTAMP)
+	`, user.ID, voteChoice)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to record vote"})
+	}
+
+	_, err = tx.Exec("UPDATE users SET has_voted = TRUE WHERE id = ?", user.ID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update user status"})
+	}
+
+	if err = tx.Commit(); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to commit transaction"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"message":     "Survey saved successfully",
+		"redirectURL": "/election",
 	})
 }
 
@@ -198,6 +242,12 @@ func (a *App) initDB() error {
 		return err
 	}
 	a.db = db
+
+	_, err = a.db.Exec("PRAGMA foreign_keys = ON;")
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
