@@ -4,12 +4,18 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
+
+	//"github.com/golang-jwt/jwt"
 	"github.com/joho/godotenv"
+	echojwt "github.com/labstack/echo-jwt/v4"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	_ "github.com/tursodatabase/libsql-client-go/libsql"
@@ -23,7 +29,13 @@ type App struct {
 	echo        *echo.Echo
 }
 
-// สร้าง struct สำหรับรับข้อมูล survey
+type CustomContext struct {
+	echo.Context
+	UserEmail string
+	UserID    int
+}
+
+// Create a struct to receive survey data
 type SurveyResponse struct {
 	ResponseData struct {
 		Vote struct {
@@ -68,7 +80,7 @@ type SurveyResponse struct {
 func NewApp() *App {
 	return &App{
 		// You can set meeting date to any date you want
-		meetingDate: time.Date(2025, time.February, 16, 2, 0, 0, 0, time.FixedZone("UTC+7", 7*60*60)),
+		meetingDate: time.Date(2025, time.February, 20, 2, 0, 0, 0, time.FixedZone("UTC+7", 7*60*60)),
 		echo:        echo.New(),
 	}
 }
@@ -94,11 +106,48 @@ func (a *App) startup(ctx context.Context) error {
 }
 
 func (a *App) setupRoutes() {
-	a.echo.Use(middleware.CORS())
-	a.echo.Use(middleware.Recover())
+	a.echo.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins:     []string{"*"},
+		AllowMethods:     []string{http.MethodGet, http.MethodPost},
+		AllowHeaders:     []string{echo.HeaderAuthorization, echo.HeaderContentType},
+		ExposeHeaders:    []string{echo.HeaderContentLength},
+		AllowCredentials: true,
+	}))
+
+	a.echo.Use(echojwt.WithConfig(echojwt.Config{
+		SigningKey:  []byte(os.Getenv("JWT_SECRET")),
+		TokenLookup: "header:Authorization",
+		ContextKey:  "user",
+		NewClaimsFunc: func(c echo.Context) jwt.Claims {
+			// Return an instance of your CustomClaims struct
+			return &CustomClaims{}
+		},
+		ErrorHandler: func(c echo.Context, err error) error {
+			log.Printf("JWT Error: %v", err)
+
+			if errors.Is(err, echojwt.ErrJWTInvalid) {
+				return c.JSON(http.StatusUnauthorized, map[string]string{
+					"error": "Invalid token",
+				})
+			}
+
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"error": "Invalid request",
+			})
+		},
+	}))
 
 	a.echo.POST("/login", a.handleLogin)
-	a.echo.POST("/survey", a.handleSaveSurvey)
+	a.echo.POST("/survey", a.handleSaveSurvey,
+		echojwt.WithConfig(echojwt.Config{
+			SigningKey:  []byte(os.Getenv("JWT_SECRET")),
+			TokenLookup: "header:Authorization",
+			NewClaimsFunc: func(c echo.Context) jwt.Claims {
+				return &CustomClaims{}
+			},
+		}),
+	)
+
 	a.echo.GET("/election", a.handleElection)
 }
 
@@ -122,106 +171,214 @@ func (a *App) handleLogin(c echo.Context) error {
 		})
 	}
 
-	var storedPassword string
-	var hasVoted bool
+	// Search user information
+	var user struct {
+		ID       int
+		HasVoted bool
+		Password string
+	}
+
 	err := a.db.QueryRow("SELECT password, has_voted FROM users WHERE email = ?",
-		credentials.Email).Scan(&storedPassword, &hasVoted)
+		credentials.Email).Scan(&user.ID, &user.Password, &user.HasVoted)
 	if err != nil {
+		log.Println("Error:", err)
+
 		if err == sql.ErrNoRows {
+			log.Printf("User not found: %s", credentials.Email)
 			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "User not found"})
 		}
+		log.Printf("Database error: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error: " + err.Error()})
 	}
 
-	if storedPassword != credentials.Password {
+	if user.Password != credentials.Password {
+		log.Printf("Invalid password for user: %s", credentials.Email)
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
 	}
 
+	// Create JWT Token
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"user_id": user.ID,
+		"email":   credentials.Email,
+		"exp":     time.Now().Add(24 * time.Hour).Unix(),
+	})
+
+	tokenString, err := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
+	if err != nil {
+		log.Printf("JWT Signing Error: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Failed to create token",
+		})
+	}
+
+	// Configure redirectURL
 	now := time.Now()
 	isMeetingDay := now.Year() == a.meetingDate.Year() &&
 		now.Month() == a.meetingDate.Month() &&
 		now.Day() == a.meetingDate.Day()
 
-	redirectURL := "/survey"
-	if hasVoted {
-		redirectURL = "/election"
+	redirectURL := "/election"
+	if isMeetingDay && !user.HasVoted {
+		redirectURL = "/survey"
 	}
 
+	log.Printf("User %s logged in successfully", credentials.Email)
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message":      "Login successful",
-		"isMeetingDay": isMeetingDay,
-		"redirectURL":  redirectURL,
+		"message":     "Login successful",
+		"token":       tokenString,
+		"redirectURL": redirectURL,
+		"user": map[string]interface{}{
+			"email":    credentials.Email,
+			"hasVoted": user.HasVoted,
+		},
 	})
 }
 
+type CustomClaims struct {
+	UserID int    `json:"user_id"`
+	Email  string `json:"email"`
+	jwt.RegisteredClaims
+}
+
+func (c *CustomContext) SetUser(email string, id int) {
+	c.UserEmail = email
+	c.UserID = id
+}
+
+// Middleware for configuring context
+func UserContextMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		cc := &CustomContext{Context: c}
+		return next(cc)
+	}
+}
+
 func (a *App) handleSaveSurvey(c echo.Context) error {
-	fmt.Println("Received save-survey request")
-	// Get user email from the request (you might need to add this to the request)
-	userEmail := c.Get("user_email").(string)
+	log.Println("Received save-survey request")
 
-	var user struct {
-		ID       int
-		HasVoted bool
-	}
-	err := a.db.QueryRow("SELECT id, has_voted FROM users WHERE email = ?", userEmail).Scan(&user.ID, &user.HasVoted)
+	userToken := c.Get("user").(*jwt.Token)
+	claims := userToken.Claims.(*CustomClaims)
+
+	userID := claims.UserID
+	userEmail := claims.Email
+
+	log.Printf("Processing survey for user: %s (ID: %d)", userEmail, userID)
+
+	// Check voting status
+	var hasVoted bool
+	err := a.db.QueryRowContext(
+		context.Background(),
+		"SELECT has_voted FROM users WHERE id = ?",
+		userID,
+	).Scan(&hasVoted)
+
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+		log.Printf("Database error: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "An error occurred while checking the status",
+		})
 	}
 
-	if user.HasVoted {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "You have already voted"})
+	if hasVoted {
+		log.Printf("User %s has already voted", userEmail)
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "You have already voted",
+		})
 	}
 
+	// Review and process survey data
 	var survey SurveyResponse
 	if err := c.Bind(&survey); err != nil {
-		fmt.Printf("Error binding request: %v\n", err)
+		log.Printf("Invalid survey data: %v", err)
 		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "Invalid request format: " + err.Error(),
+			"error": "The survey data format is invalid: " + err.Error(),
 		})
 	}
-	fmt.Printf("Received survey data: %+v\n", survey)
 
-	prettyJSON, err := json.MarshalIndent(survey.ResponseData, "", "  ")
+	// Validate survey data
+	if err := validateSurvey(&survey); err != nil {
+		log.Printf("Survey validation failed: %v", err)
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "Survey data is invalid: " + err.Error(),
+		})
+	}
+
+	// Convert to JSON
+	voteData, err := json.Marshal(survey.ResponseData)
 	if err != nil {
-		fmt.Printf("Error marshaling response data: %v\n", err)
+		log.Printf("JSON marshaling error: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "Failed to process survey data",
+			"error": "An error occurred while processing the data",
 		})
 	}
-	fmt.Printf("Pretty Marshaled JSON:\n%s\n", string(prettyJSON))
 
-	voteChoice, err := json.Marshal(survey.ResponseData)
+	// Transaction management
+	tx, err := a.db.BeginTx(context.Background(), &sql.TxOptions{
+		Isolation: sql.LevelSerializable,
+	})
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to process survey data"})
-	}
-
-	tx, err := a.db.Begin()
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Transaction error"})
+		log.Printf("Transaction start error: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Unable to start data recording process",
+		})
 	}
 	defer tx.Rollback()
 
-	_, err = tx.Exec(`
-		INSERT INTO user_votes (user_id, vote_choice, vote_timestamp)
-		VALUES (?, ?, CURRENT_TIMESTAMP)
-	`, user.ID, voteChoice)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to record vote"})
+	// Save vote from user
+	if _, err = tx.ExecContext(
+		context.Background(),
+		`INSERT INTO user_votes 
+        (user_id, vote_choice, vote_timestamp)
+        VALUES (?, ?, CURRENT_TIMESTAMP)`,
+		userID,
+		voteData,
+	); err != nil {
+		log.Printf("Vote insertion error: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Failed to save vote",
+		})
 	}
 
-	_, err = tx.Exec("UPDATE users SET has_voted = TRUE WHERE id = ?", user.ID)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update user status"})
+	// Update user status
+	if _, err = tx.ExecContext(
+		context.Background(),
+		"UPDATE users SET has_voted = TRUE WHERE id = ?",
+		userID,
+	); err != nil {
+		log.Printf("User update error: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "User status update failed",
+		})
 	}
 
+	// Commit transaction
 	if err = tx.Commit(); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to commit transaction"})
+		log.Printf("Transaction commit error: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Transaction commit is incomplete",
+		})
 	}
 
+	log.Printf("Survey saved successfully for user: %s", userEmail)
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message":     "Survey saved successfully",
+		"message":     "Survey saved",
 		"redirectURL": "/election",
+		"metadata": map[string]interface{}{
+			"timestamp": time.Now().Format(time.RFC3339),
+			"userID":    userID,
+		},
 	})
+}
+
+func validateSurvey(survey *SurveyResponse) error {
+	// Implement validation logic
+	if survey.ResponseData.Vote.ResponseValue == "" {
+		return fmt.Errorf("votes must be specified")
+	}
+	if survey.ResponseData.Nomination.ResponseValue == "" {
+		return fmt.Errorf("nomination must be specified")
+	}
+	return nil
 }
 
 func (a *App) handleElection(c echo.Context) error {
