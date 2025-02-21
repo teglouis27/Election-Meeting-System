@@ -87,6 +87,10 @@ func NewApp() *App {
 	}
 }
 
+func (a *App) beginTx(ctx context.Context) (*sql.Tx, error) {
+	return a.db.BeginTx(ctx, nil)
+}
+
 // startup is called when the app starts
 func (a *App) startup(ctx context.Context) error {
 	a.ctx = ctx
@@ -327,9 +331,8 @@ func (a *App) handleSaveSurvey(c echo.Context) error {
 	}
 
 	// Transaction management
-	tx, err := a.db.BeginTx(context.Background(), &sql.TxOptions{
-		Isolation: sql.LevelSerializable,
-	})
+	tx, err := a.beginTx(context.Background())
+
 	if err != nil {
 		log.Printf("Transaction start error: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
@@ -479,6 +482,9 @@ func (a *App) initDB() error {
 		return err
 	}
 	a.db = db
+	a.db.SetMaxOpenConns(25)
+	a.db.SetMaxIdleConns(25)
+	a.db.SetConnMaxLifetime(30 * time.Minute)
 
 	_, err = a.db.Exec("PRAGMA foreign_keys = ON;")
 	if err != nil {
