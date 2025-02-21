@@ -262,14 +262,26 @@ function submitThreshold() {
     if (numerator) {
         
         document.getElementById('responseMessage').textContent = `You proposed that the number of votes needed for change is: \( \frac{${numerator}}{#business owners} \).`;
-        submitAllSurvey();
+        submitSurvey();
            
     } else {
         document.getElementById('errorMessage').textContent = "Please enter a valid numerator.";
     }
 }
 
-async function submitAllSurvey() {
+async function submitSurvey() {
+    const token = localStorage.getItem('jwtToken');
+    if (!token) {
+        alert('please login again');
+        window.location.href = '/login';
+        return;
+    }
+
+    const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+    };
+    
     const surveyData = {
         response_data: {
             vote: {
@@ -283,7 +295,7 @@ async function submitAllSurvey() {
                     "I propose _____ to be a business owner starting from the next meeting:" :
                     "I propose _____ to no longer be a business owner starting from the next meeting:",
                 response_value: document.getElementById("nomineeName")?.value || 
-                              document.getElementById("removeName")?.value || ""
+                            document.getElementById("removeName")?.value || ""
             },
             feature: {
                 question_type: "feature",
@@ -313,31 +325,78 @@ async function submitAllSurvey() {
         }
     };
 
+    if (!validateSurveyData(surveyData)) {
+        alert('Please fill in all information');
+        return;
+    }
+
     try {
         const response = await fetch('http://localhost:8080/survey', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: headers,
             body: JSON.stringify(surveyData)
         });
 
-        if (!response.ok) {
-            throw new Error('Failed to save survey');
+        if (response.status === 401) {
+            handleUnauthorized();
+            return;
         }
-
+        
         const result = await response.json();
-        //document.getElementById('thankYouMessage').textContent = "Thank you! Your survey has been submitted.";
-        showNext('thankYouContainer');
-
-        // Add a delay before redirecting to the election page
-        setTimeout(() => {
-            showElectionPage();
-        }, 3000); // 3 seconds delay
-    } catch (err) {
-        console.error('Failed to save survey:', err);
-        alert('Failed to save survey. Please try again.');
+        handleSubmissionResult(result);
+    } catch (error) {
+        handleNetworkError(error);
     }
+   
+}
+
+function validateSurveyData(data) {
+    const rd = data.response_data;
+    return (
+      [-1, 0, 1].includes(Number(rd.vote.response_value)) &&
+      rd.nomination.response_value.trim() !== "" &&
+      rd.feature.response_value.trim() !== "" &&
+      /^\d+\s+for\s+.+$/.test(rd.spending.response_value) &&
+      rd.question.response_value.trim() !== "" &&
+      /^\d+\s+weeks$/.test(rd.election.response_value) &&
+      Number(rd.election.response_value.split(" ")[0]) >= 1 &&
+      Number(rd.election.response_value.split(" ")[0]) <= 24 &&
+      !isNaN(Number(rd.threshold.response_value))
+    );
+}
+  
+
+function handleSubmissionResult(result) {
+    if (result.redirectURL) {
+      window.location.href = result.redirectURL;
+    }
+    showSuccessMessage();
+}
+  
+function handleUnauthorized() {
+    localStorage.removeItem('jwtToken');
+    window.location.href = '/login';
+}
+
+function handleNetworkError(error) {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('jwtToken');
+      window.location.href = '/login';
+    } else {
+      console.error('Network Error:', error);
+      showErrorMessage('Connection failed. Please try again');
+    }
+}
+  
+
+function showSuccessMessage() {
+    //document.getElementById('thankYouMessage').textContent = "Thank you! Your survey has been submitted.";
+    showNext('thankYouContainer');
+
+    // Add a delay before redirecting to the election page
+    setTimeout(() => {
+        showElectionPage();
+    }, 3000); // 3 seconds delay
 }
 
 
@@ -357,5 +416,7 @@ window.submitThreshold = submitThreshold;
 
 window.showElectionPage = showElectionPage;
 window.setTimeZone = setTimeZone;
+
+window.submitSurvey = submitSurvey;
 
 

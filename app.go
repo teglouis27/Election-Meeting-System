@@ -9,6 +9,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -106,35 +108,25 @@ func (a *App) startup(ctx context.Context) error {
 }
 
 func (a *App) setupRoutes() {
-	a.echo.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins:     []string{"*"},
-		AllowMethods:     []string{http.MethodGet, http.MethodPost},
-		AllowHeaders:     []string{echo.HeaderAuthorization, echo.HeaderContentType},
-		ExposeHeaders:    []string{echo.HeaderContentLength},
-		AllowCredentials: true,
+	a.echo.Use(middleware.SecureWithConfig(middleware.SecureConfig{
+		XSSProtection:         "1; mode=block",
+		ContentTypeNosniff:    "nosniff",
+		XFrameOptions:         "SAMEORIGIN",
+		HSTSMaxAge:            3600,
+		ContentSecurityPolicy: "default-src 'self'",
 	}))
 
-	a.echo.Use(echojwt.WithConfig(echojwt.Config{
-		SigningKey:  []byte(os.Getenv("JWT_SECRET")),
-		TokenLookup: "header:Authorization",
-		ContextKey:  "user",
-		NewClaimsFunc: func(c echo.Context) jwt.Claims {
-			// Return an instance of your CustomClaims struct
-			return &CustomClaims{}
+	a.echo.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins: []string{"*"},
+		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete},
+		AllowHeaders: []string{
+			echo.HeaderAuthorization,
+			echo.HeaderContentType,
+			echo.HeaderXRequestedWith,
 		},
-		ErrorHandler: func(c echo.Context, err error) error {
-			log.Printf("JWT Error: %v", err)
-
-			if errors.Is(err, echojwt.ErrJWTInvalid) {
-				return c.JSON(http.StatusUnauthorized, map[string]string{
-					"error": "Invalid token",
-				})
-			}
-
-			return c.JSON(http.StatusBadRequest, map[string]string{
-				"error": "Invalid request",
-			})
-		},
+		ExposeHeaders:    []string{echo.HeaderContentLength},
+		AllowCredentials: true,
+		MaxAge:           86400,
 	}))
 
 	a.echo.POST("/login", a.handleLogin)
@@ -142,8 +134,23 @@ func (a *App) setupRoutes() {
 		echojwt.WithConfig(echojwt.Config{
 			SigningKey:  []byte(os.Getenv("JWT_SECRET")),
 			TokenLookup: "header:Authorization",
+			ContextKey:  "user",
 			NewClaimsFunc: func(c echo.Context) jwt.Claims {
+				// Return an instance of your CustomClaims struct
 				return &CustomClaims{}
+			},
+			ErrorHandler: func(c echo.Context, err error) error {
+				log.Printf("JWT Error: %v", err)
+
+				if errors.Is(err, echojwt.ErrJWTInvalid) {
+					return c.JSON(http.StatusUnauthorized, map[string]string{
+						"error": "Invalid token",
+					})
+				}
+
+				return c.JSON(http.StatusBadRequest, map[string]string{
+					"error": "Invalid request",
+				})
 			},
 		}),
 	)
@@ -371,14 +378,79 @@ func (a *App) handleSaveSurvey(c echo.Context) error {
 }
 
 func validateSurvey(survey *SurveyResponse) error {
-	// Implement validation logic
 	if survey.ResponseData.Vote.ResponseValue == "" {
 		return fmt.Errorf("votes must be specified")
 	}
+	if !isValidVote(survey.ResponseData.Vote.ResponseValue) {
+		return fmt.Errorf("invalid votes must be -1, 0, or 1")
+	}
 	if survey.ResponseData.Nomination.ResponseValue == "" {
-		return fmt.Errorf("nomination must be specified")
+		return fmt.Errorf("the name must be specified")
+	}
+	if len(survey.ResponseData.Nomination.ResponseValue) < 2 || len(survey.ResponseData.Nomination.ResponseValue) > 50 {
+		return fmt.Errorf("์name must be between 2 and 50 characters long")
+	}
+	if survey.ResponseData.Feature.ResponseValue == "" {
+		return fmt.Errorf("you must specify the features you want to add")
+	}
+	if survey.ResponseData.Spending.ResponseValue == "" {
+		return fmt.Errorf("amount and purpose must be specified")
+	}
+	if !isValidSpending(survey.ResponseData.Spending.ResponseValue) {
+		return fmt.Errorf("format for specifying the amount and purpose is invalid")
+	}
+	if survey.ResponseData.Question.ResponseValue == "" {
+		return fmt.Errorf("question must be specified")
+	}
+	if survey.ResponseData.Election.ResponseValue == "" {
+		return fmt.Errorf("time period for the next election must be specified")
+	}
+	weeks, err := parseElectionWeeks(survey.ResponseData.Election.ResponseValue)
+	if err != nil {
+		return fmt.Errorf("election period format is incorrect: %v", err)
+	}
+	if weeks < 1 || weeks > 24 {
+		return fmt.Errorf("election period must be between 1 and 24 weeks")
+	}
+	if survey.ResponseData.Threshold.ResponseValue == "" {
+		return fmt.Errorf("number of votes required for change must be specified")
+	}
+	if !isValidThreshold(survey.ResponseData.Threshold.ResponseValue) {
+		return fmt.Errorf("number of votes is incorrect")
 	}
 	return nil
+}
+
+func isValidVote(vote string) bool {
+	validVotes := []string{"-1", "0", "1"}
+	for _, v := range validVotes {
+		if vote == v {
+			return true
+		}
+	}
+	return false
+}
+
+func isValidSpending(spending string) bool {
+	parts := strings.SplitN(spending, " for ", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	_, err := strconv.ParseFloat(parts[0], 64)
+	return err == nil && parts[1] != ""
+}
+
+func parseElectionWeeks(election string) (int, error) {
+	parts := strings.Split(election, " ")
+	if len(parts) != 2 || parts[1] != "weeks" {
+		return 0, fmt.Errorf("format must be 'number of weeks'")
+	}
+	return strconv.Atoi(parts[0])
+}
+
+func isValidThreshold(threshold string) bool {
+	num, err := strconv.Atoi(threshold)
+	return err == nil && num > 0
 }
 
 func (a *App) handleElection(c echo.Context) error {
