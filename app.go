@@ -82,7 +82,7 @@ type SurveyResponse struct {
 func NewApp() *App {
 	return &App{
 		// You can set meeting date to any date you want
-		meetingDate: time.Date(2025, time.February, 20, 2, 0, 0, 0, time.FixedZone("UTC+7", 7*60*60)),
+		meetingDate: time.Date(2025, time.February, 21, 2, 0, 0, 0, time.FixedZone("UTC+7", 7*60*60)),
 		echo:        echo.New(),
 	}
 }
@@ -185,8 +185,9 @@ func (a *App) handleLogin(c echo.Context) error {
 		Password string
 	}
 
-	err := a.db.QueryRow("SELECT password, has_voted FROM users WHERE email = ?",
+	err := a.db.QueryRow("SELECT id, password, has_voted FROM users WHERE email = ?",
 		credentials.Email).Scan(&user.ID, &user.Password, &user.HasVoted)
+
 	if err != nil {
 		log.Println("Error:", err)
 
