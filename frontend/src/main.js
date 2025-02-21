@@ -31,7 +31,7 @@ window.login = async function (email, password) {
         });
         console.log("Raw response:", response);
 
-        // ตรวจสอบ response type
+        // Check if the response is JSON
         const contentType = response.headers.get("content-type");
         if (!contentType || !contentType.includes("application/json")) {
             throw new Error("Server did not return JSON");
@@ -40,20 +40,25 @@ window.login = async function (email, password) {
         const result = await response.json();
 
         if (response.ok) {
-            // บันทึก email ของผู้ใช้ไว้ใน localStorage หรือ sessionStorage
+            // Log the token for debugging
+            console.log('Received token:', result.token);
+
+            // Save JWT Token in localStorage
+            localStorage.setItem('jwtToken', result.token);
+
+            // Save the token in localStorage
             localStorage.setItem('userEmail', email);
 
-            // check redirectURL recieve from backend
+            // Redirect based on backend-provided URL
             if (result.redirectURL === '/survey') {
                 showSurveyPage();
             } else if (result.redirectURL === '/election') {
                 showElectionPage();
             } else {
-                // กรณีอื่นๆ (ถ้ามี)
                 console.error('Unexpected redirect URL:', result.redirectURL);
             }
         } else {
-            // แสดงข้อความแจ้งเตือนกรณีล็อกอินไม่สำเร็จ
+            // Display error message for unsuccessful login
             alert(result.error || 'Login failed. Please try again.');
         }
     } catch (error) {
@@ -271,6 +276,7 @@ function submitThreshold() {
 
 async function submitSurvey() {
     const token = localStorage.getItem('jwtToken');
+    console.log('Sending request with token:', token);
     if (!token) {
         alert('please login again');
         window.location.href = '/login';
@@ -279,7 +285,7 @@ async function submitSurvey() {
 
     const headers = {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
+        'Authorization': `Bearer ${token.trim()}`
     };
     
     const surveyData = {
@@ -336,7 +342,7 @@ async function submitSurvey() {
             headers: headers,
             body: JSON.stringify(surveyData)
         });
-
+        console.log('Response status:', response.status);
         if (response.status === 401) {
             handleUnauthorized();
             return;
@@ -345,6 +351,7 @@ async function submitSurvey() {
         const result = await response.json();
         handleSubmissionResult(result);
     } catch (error) {
+        console.error('Error submitting survey:', error);
         handleNetworkError(error);
     }
    

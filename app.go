@@ -133,7 +133,7 @@ func (a *App) setupRoutes() {
 	a.echo.POST("/survey", a.handleSaveSurvey,
 		echojwt.WithConfig(echojwt.Config{
 			SigningKey:  []byte(os.Getenv("JWT_SECRET")),
-			TokenLookup: "header:Authorization",
+			TokenLookup: "header:Authorization:Bearer ",
 			ContextKey:  "user",
 			NewClaimsFunc: func(c echo.Context) jwt.Claims {
 				// Return an instance of your CustomClaims struct
@@ -143,6 +143,7 @@ func (a *App) setupRoutes() {
 				log.Printf("JWT Error: %v", err)
 
 				if errors.Is(err, echojwt.ErrJWTInvalid) {
+					log.Printf("Invalid token received: %s", c.Request().Header.Get("Authorization"))
 					return c.JSON(http.StatusUnauthorized, map[string]string{
 						"error": "Invalid token",
 					})
@@ -211,13 +212,19 @@ func (a *App) handleLogin(c echo.Context) error {
 		"exp":     time.Now().Add(24 * time.Hour).Unix(),
 	})
 
-	tokenString, err := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		log.Fatal("JWT_SECRET is not set in the environment")
+	}
+
+	tokenString, err := token.SignedString([]byte(jwtSecret))
 	if err != nil {
 		log.Printf("JWT Signing Error: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to create token",
 		})
 	}
+	log.Printf("Generated token for user %s: %s", credentials.Email, tokenString)
 
 	// Configure redirectURL
 	now := time.Now()
@@ -266,11 +273,10 @@ func (a *App) handleSaveSurvey(c echo.Context) error {
 
 	userToken := c.Get("user").(*jwt.Token)
 	claims := userToken.Claims.(*CustomClaims)
-
+	log.Printf("Processing survey for user: %s (ID: %d)", claims.Email, claims.UserID)
+	log.Printf("Received token: %s", userToken.Raw)
 	userID := claims.UserID
 	userEmail := claims.Email
-
-	log.Printf("Processing survey for user: %s (ID: %d)", userEmail, userID)
 
 	// Check voting status
 	var hasVoted bool
@@ -462,8 +468,9 @@ func (a *App) handleElection(c echo.Context) error {
 }
 
 func (a *App) initDB() error {
-	if err := godotenv.Load(); err != nil {
-		return err
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
 	}
 	url := os.Getenv("DATABASE_URL")
 	authToken := os.Getenv("AUTH_TOKEN")
