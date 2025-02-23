@@ -25,10 +25,9 @@ import (
 
 // App struct
 type App struct {
-	ctx         context.Context
-	db          *sql.DB
-	meetingDate time.Time
-	echo        *echo.Echo
+	ctx  context.Context
+	db   *sql.DB
+	echo *echo.Echo
 }
 
 type CustomContext struct {
@@ -81,9 +80,7 @@ type SurveyResponse struct {
 // NewApp creates a new App application struct
 func NewApp() *App {
 	return &App{
-		// You can set meeting date to any date you want
-		meetingDate: time.Date(2025, time.February, 21, 2, 0, 0, 0, time.FixedZone("UTC+7", 7*60*60)),
-		echo:        echo.New(),
+		echo: echo.New(),
 	}
 }
 
@@ -230,11 +227,16 @@ func (a *App) handleLogin(c echo.Context) error {
 	}
 	log.Printf("Generated token for user %s: %s", credentials.Email, tokenString)
 
-	// Configure redirectURL
+	sessionStart, sessionEnd, err := a.getLatestVotingSession()
+	if err != nil {
+		log.Printf("Warning: %v, using default date", err)
+		sessionStart = time.Time{}
+		sessionEnd = time.Time{}
+	}
+
 	now := time.Now()
-	isMeetingDay := now.Year() == a.meetingDate.Year() &&
-		now.Month() == a.meetingDate.Month() &&
-		now.Day() == a.meetingDate.Day()
+	isMeetingDay := !sessionStart.IsZero() && !sessionEnd.IsZero() &&
+		now.After(sessionStart) && now.Before(sessionEnd)
 
 	redirectURL := "/election"
 	if isMeetingDay && !user.HasVoted {
@@ -270,6 +272,22 @@ func UserContextMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		cc := &CustomContext{Context: c}
 		return next(cc)
 	}
+}
+
+func (a *App) getLatestVotingSession() (time.Time, time.Time, error) {
+	var startDate, endDate time.Time
+	err := a.db.QueryRowContext(
+		context.Background(),
+		"SELECT start_date, end_date FROM voting_sessions ORDER BY start_date DESC LIMIT 1",
+	).Scan(&startDate, &endDate)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return time.Time{}, time.Time{}, fmt.Errorf("no voting sessions found")
+		}
+		return time.Time{}, time.Time{}, err
+	}
+	return startDate, endDate, nil
 }
 
 func (a *App) handleSaveSurvey(c echo.Context) error {
@@ -345,14 +363,14 @@ func (a *App) handleSaveSurvey(c echo.Context) error {
 	if _, err = tx.ExecContext(
 		context.Background(),
 		`INSERT INTO user_votes 
-        (user_id, vote_choice, vote_timestamp)
-        VALUES (?, ?, CURRENT_TIMESTAMP)`,
+        (user_id, voting_session_id, vote_choice, vote_timestamp)
+        VALUES (?, (SELECT id FROM voting_sessions ORDER BY start_date DESC LIMIT 1), ?, CURRENT_TIMESTAMP)`,
 		userID,
 		voteData,
 	); err != nil {
 		log.Printf("Vote insertion error: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "Failed to save vote",
+			"error": "Failed to record vote",
 		})
 	}
 
