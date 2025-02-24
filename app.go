@@ -290,6 +290,23 @@ func (a *App) getLatestVotingSession() (time.Time, time.Time, error) {
 	return startDate, endDate, nil
 }
 
+func (a *App) getCurrentVotingSessionID() (int, error) {
+	var sessionID int
+	err := a.db.QueryRowContext(
+		context.Background(),
+		`SELECT id FROM voting_sessions 
+         WHERE start_date <= CURRENT_TIMESTAMP AND end_date >= CURRENT_TIMESTAMP 
+         ORDER BY start_date DESC LIMIT 1`,
+	).Scan(&sessionID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0, fmt.Errorf("no active voting session found")
+		}
+		return 0, err
+	}
+	return sessionID, nil
+}
+
 func (a *App) handleSaveSurvey(c echo.Context) error {
 	log.Println("Received save-survey request")
 
@@ -301,6 +318,7 @@ func (a *App) handleSaveSurvey(c echo.Context) error {
 	userEmail := claims.Email
 
 	// Check voting status
+	log.Printf("Checking voting status for user: %d", userID)
 	var hasVoted bool
 	err := a.db.QueryRowContext(
 		context.Background(),
@@ -309,18 +327,12 @@ func (a *App) handleSaveSurvey(c echo.Context) error {
 	).Scan(&hasVoted)
 
 	if err != nil {
-		log.Printf("Database error: %v", err)
+		log.Printf("Database error while checking voting status: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "An error occurred while checking the status",
 		})
 	}
-
-	if hasVoted {
-		log.Printf("User %s has already voted", userEmail)
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "You have already voted",
-		})
-	}
+	log.Printf("User %d has voted: %v", userID, hasVoted)
 
 	// Review and process survey data
 	var survey SurveyResponse
@@ -330,7 +342,6 @@ func (a *App) handleSaveSurvey(c echo.Context) error {
 			"error": "The survey data format is invalid: " + err.Error(),
 		})
 	}
-
 	// Validate survey data
 	if err := validateSurvey(&survey); err != nil {
 		log.Printf("Survey validation failed: %v", err)
@@ -338,7 +349,6 @@ func (a *App) handleSaveSurvey(c echo.Context) error {
 			"error": "Survey data is invalid: " + err.Error(),
 		})
 	}
-
 	// Convert to JSON
 	voteData, err := json.Marshal(survey.ResponseData)
 	if err != nil {
@@ -348,9 +358,20 @@ func (a *App) handleSaveSurvey(c echo.Context) error {
 		})
 	}
 
-	// Transaction management
-	tx, err := a.beginTx(context.Background())
+	// Verify voting_session_id
+	log.Println("Verifying current voting session")
+	votingSessionID, err := a.getCurrentVotingSessionID()
+	if err != nil {
+		log.Printf("Error getting current voting session: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "No active voting session",
+		})
+	}
+	log.Printf("Current voting session ID: %d", votingSessionID)
 
+	// Transaction management
+	log.Println("Starting database transaction")
+	tx, err := a.beginTx(context.Background())
 	if err != nil {
 		log.Printf("Transaction start error: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
@@ -360,39 +381,48 @@ func (a *App) handleSaveSurvey(c echo.Context) error {
 	defer tx.Rollback()
 
 	// Save vote from user
-	if _, err = tx.ExecContext(
+	log.Printf("Attempting to insert vote for user %d with session %d", userID, votingSessionID)
+	_, err = tx.ExecContext(
 		context.Background(),
-		`INSERT INTO user_votes 
+		`INSERT INTO user_votes
         (user_id, voting_session_id, vote_choice, vote_timestamp)
-        VALUES (?, (SELECT id FROM voting_sessions ORDER BY start_date DESC LIMIT 1), ?, CURRENT_TIMESTAMP)`,
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
 		userID,
+		votingSessionID,
 		voteData,
-	); err != nil {
+	)
+	if err != nil {
 		log.Printf("Vote insertion error: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to record vote",
 		})
 	}
+	log.Printf("Vote successfully inserted for user %d", userID)
 
 	// Update user status
-	if _, err = tx.ExecContext(
+	log.Printf("Updating has_voted status for user %d", userID)
+	_, err = tx.ExecContext(
 		context.Background(),
 		"UPDATE users SET has_voted = TRUE WHERE id = ?",
 		userID,
-	); err != nil {
+	)
+	if err != nil {
 		log.Printf("User update error: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "User status update failed",
 		})
 	}
+	log.Printf("User %d status updated successfully", userID)
 
 	// Commit transaction
+	log.Println("Committing transaction")
 	if err = tx.Commit(); err != nil {
 		log.Printf("Transaction commit error: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Transaction commit is incomplete",
 		})
 	}
+	log.Println("Transaction committed successfully")
 
 	log.Printf("Survey saved successfully for user: %s", userEmail)
 	return c.JSON(http.StatusOK, map[string]interface{}{
@@ -460,12 +490,12 @@ func isValidVote(vote string) bool {
 }
 
 func isValidSpending(spending string) bool {
-	parts := strings.SplitN(spending, " for ", 2)
+	parts := strings.Split(spending, " for ")
 	if len(parts) != 2 {
 		return false
 	}
-	_, err := strconv.ParseFloat(parts[0], 64)
-	return err == nil && parts[1] != ""
+	amount, err := strconv.ParseFloat(parts[0], 64)
+	return err == nil && amount > 0
 }
 
 func parseElectionWeeks(election string) (int, error) {
@@ -501,7 +531,7 @@ func (a *App) initDB() error {
 	}
 	a.db = db
 	a.db.SetMaxOpenConns(25)
-	a.db.SetMaxIdleConns(25)
+	a.db.SetMaxIdleConns(5)
 	a.db.SetConnMaxLifetime(30 * time.Minute)
 
 	_, err = a.db.Exec("PRAGMA foreign_keys = ON;")
