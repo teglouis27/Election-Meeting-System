@@ -101,7 +101,7 @@ func (a *App) startup(ctx context.Context) error {
 		if err := a.resetVotingStatus(); err != nil {
 			log.Printf("Initial reset error: %v", err)
 		}
-		ticker := time.NewTicker(15 * time.Minute)
+		ticker := time.NewTicker(55 * time.Minute)
 		defer ticker.Stop()
 		for {
 			select {

@@ -168,20 +168,18 @@ function selectVote(value) {
 
 function submitVote() {
     if (selectedVote !== null) {
-  
         if (selectedVote === 1) {
             showNext('nominationContainer');
         } else if (selectedVote === -1) {
             showNext('removalContainer');
         } else if (selectedVote === 0) {
+            document.getElementById('noVoteName').value = "No nomination required";
             showNext('featureContainer');
         }
- 
     } else {
         document.getElementById('voteMessage').textContent = "Please select an option before submitting your vote.";
     }
 }
-
 
 function submitNomination() {
     let nomineeName = document.getElementById("nomineeName").value;
@@ -312,12 +310,17 @@ async function submitSurvey() {
             },
             nomination: {
                 question_type: "nomination",
-                question_text: document.getElementById("nomineeName") ? 
+                question_text: selectedVote === 1 ? 
                     "I propose _____ to be a business owner starting from the next meeting:" :
-                    "I propose _____ to no longer be a business owner starting from the next meeting:",
-                response_value: document.getElementById("nomineeName")?.value || 
-                            document.getElementById("removeName")?.value || ""
-            },
+                    selectedVote === -1 ?
+                    "I propose _____ to no longer be a business owner starting from the next meeting:" :
+                    "No nomination required for ±0 vote",
+                response_value: selectedVote === 1 ? 
+                    document.getElementById("nomineeName")?.value || "" :
+                    selectedVote === -1 ? 
+                    document.getElementById("removeName")?.value || "" : 
+                    "N/A"
+            },            
             feature: {
                 question_type: "feature",
                 question_text: "I propose to add the software feature:",
@@ -371,9 +374,11 @@ async function submitSurvey() {
 
 function validateSurveyData(data) {
     const rd = data.response_data;
+    const voteValue = Number(rd.vote.response_value);
+
     return (
-      [-1, 0, 1].includes(Number(rd.vote.response_value)) &&
-      rd.nomination.response_value.trim() !== "" &&
+      [-1, 0, 1].includes(voteValue) &&
+      (voteValue === 0 || rd.nomination.response_value.trim() !== "") &&
       rd.feature.response_value.trim() !== "" &&
       /^\d+\s+for\s+.+$/.test(rd.spending.response_value) &&
       rd.question.response_value.trim() !== "" &&
