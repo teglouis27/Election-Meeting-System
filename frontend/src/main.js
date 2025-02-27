@@ -21,35 +21,29 @@ window.login = async function (email, password) {
     }
 
     try {
+
         const response = await fetch('http://localhost:8080/login',
         {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
             },
             body: JSON.stringify({ email, password }),
         });
         console.log("Raw response:", response);
 
-        // Check if the response is JSON
-        const contentType = response.headers.get("content-type");
-        if (!contentType || !contentType.includes("application/json")) {
-            throw new Error("Server did not return JSON");
-        }
-
-        const result = await response.json();
 
         if (response.ok) {
-            // Log the token for debugging
-            console.log('Received token:', result.token);
+            const result = await response.json();
+            console.log('Login successful:', result);
 
-            // Save JWT Token in localStorage
-            localStorage.setItem('jwtToken', result.token);
+            if (result.user && result.user.id) {
+                localStorage.setItem('userId', result.user.id);
+                console.log('User ID saved:', result.user.id);
+            } else {
+                console.error('User ID not found in response');
+            }
 
-            // Save the token in localStorage
-            localStorage.setItem('userEmail', email);
-
-            // Redirect based on backend-provided URL
             if (result.redirectURL === '/survey') {
                 showSurveyPage();
             } else if (result.redirectURL === '/election') {
@@ -58,8 +52,9 @@ window.login = async function (email, password) {
                 console.error('Unexpected redirect URL:', result.redirectURL);
             }
         } else {
-            // Display error message for unsuccessful login
-            alert(result.error || 'Login failed. Please try again.');
+            const error = await response.json();
+            console.error('Login failed:', error.error);
+            alert(error.error);
         }
     } catch (error) {
         console.error('Login error:', error);
@@ -274,19 +269,39 @@ function submitThreshold() {
     }
 }
 
-async function submitSurvey() {
-    const token = localStorage.getItem('jwtToken');
-    console.log('Sending request with token:', token);
-    if (!token) {
-        alert('please login again');
-        window.location.href = '/login';
+async function makeAuthenticatedRequest(url, method, body) {
+    const userId = localStorage.getItem('userId');
+    if (!userId) {
+        console.error('User ID not found in local storage');
         return;
     }
 
-    const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token.trim()}`
-    };
+    const response = await fetch(url, {
+        method: method,
+        headers: {
+            'Content-Type': 'application/json',
+            'X-User-ID': userId
+        },
+        body: JSON.stringify(body)
+    });
+
+    return response;
+}
+
+async function checkAuthStatus() {
+    const response = await fetch('/check-auth', {
+      headers: { 'X-User-ID': localStorage.getItem('userId') }
+    });
+    
+    if (!response.ok) {
+      localStorage.removeItem('userId');
+      window.location.href = '/login';
+    }
+  }
+  
+setInterval(checkAuthStatus, 300000);
+
+async function submitSurvey() {
     
     const surveyData = {
         response_data: {
@@ -337,22 +352,19 @@ async function submitSurvey() {
     }
 
     try {
-        const response = await fetch('http://localhost:8080/survey', {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(surveyData)
-        });
-        console.log('Response status:', response.status);
-        if (response.status === 401) {
-            handleUnauthorized();
-            return;
-        }
+        const response = await makeAuthenticatedRequest('http://localhost:8080/survey', 'POST', surveyData);
         
-        const result = await response.json();
-        handleSubmissionResult(result);
+        if (response.ok) {
+            const result = await response.json();
+            console.log('Survey submitted successfully:', result);
+            handleSubmissionResult(result);
+        } else {
+            const error = await response.json();
+            console.error('Survey submission failed:', error);
+            alert('เกิดข้อผิดพลาดในการส่งแบบสำรวจ');
+        }
     } catch (error) {
         console.error('Error submitting survey:', error);
-        handleNetworkError(error);
     }
    
 }
@@ -375,24 +387,22 @@ function validateSurveyData(data) {
 
 function handleSubmissionResult(result) {
     if (result.redirectURL) {
-      window.location.href = result.redirectURL;
-    }
-    showSuccessMessage();
-}
-  
-function handleUnauthorized() {
-    localStorage.removeItem('jwtToken');
-    window.location.href = '/login';
-}
-
-function handleNetworkError(error) {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('jwtToken');
-      window.location.href = '/login';
-    } else {
-      console.error('Network Error:', error);
-      showErrorMessage('Connection failed. Please try again');
-    }
+        fetch(result.redirectURL, {
+          headers: {
+            'X-User-ID': localStorage.getItem('userId')
+          }
+        })
+        .then(response => response.text())
+        .then(html => {
+          document.getElementById('app').innerHTML = html;
+          if (result.redirectURL.includes('election')) {
+            initializeElectionPage();
+          } else if (result.redirectURL.includes('survey')) {
+            initializeSurveyPage();
+          }
+        });
+      }
+      showSuccessMessage();
 }
   
 

@@ -11,7 +11,7 @@ require (
 	github.com/wailsapp/wails/v2 v2.9.2
 )
 
-require github.com/golang-jwt/jwt/v5 v5.2.1
+require github.com/stretchr/testify v1.10.0 // indirect
 
 require (
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
@@ -21,7 +21,6 @@ require (
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/jchv/go-winloader v0.0.0-20210711035445-715c2860da7e // indirect
-	github.com/labstack/echo-jwt/v4 v4.3.0
 	github.com/labstack/gommon v0.4.2 // indirect
 	github.com/leaanthony/go-ansi-parser v1.6.0 // indirect
 	github.com/leaanthony/gosod v1.0.3 // indirect
@@ -43,7 +42,7 @@ require (
 	golang.org/x/net v0.31.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
-	golang.org/x/time v0.8.0 // indirect
+	golang.org/x/time v0.5.0 // indirect
 )
 
 // replace github.com/wailsapp/wails/v2 v2.9.2 => C:\Users\santi\go\pkg\mod
