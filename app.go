@@ -95,6 +95,26 @@ func (a *App) startup(ctx context.Context) error {
 
 	// Setup Echo routes
 	a.setupRoutes()
+
+	// Task Scheduler for reset vote status when meeting end
+	go func() {
+		if err := a.resetVotingStatus(); err != nil {
+			log.Printf("Initial reset error: %v", err)
+		}
+		ticker := time.NewTicker(15 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := a.resetVotingStatus(); err != nil {
+					log.Printf("Error resetting voting status: %v", err)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	// Start Echo server with error handling
 	go func() {
 		if err := a.echo.Start(":8080"); err != nil {
@@ -458,7 +478,7 @@ func validateSurvey(survey *SurveyResponse) error {
 	if survey.ResponseData.Nomination.ResponseValue == "" {
 		return fmt.Errorf("the name must be specified")
 	}
-	if len(survey.ResponseData.Nomination.ResponseValue) < 2 || len(survey.ResponseData.Nomination.ResponseValue) > 50 {
+	if len(survey.ResponseData.Nomination.ResponseValue) < 1 || len(survey.ResponseData.Nomination.ResponseValue) > 99 {
 		return fmt.Errorf("์name must be between 2 and 50 characters long")
 	}
 	if survey.ResponseData.Feature.ResponseValue == "" {
@@ -526,6 +546,21 @@ func isValidThreshold(threshold string) bool {
 
 func (a *App) handleElection(c echo.Context) error {
 	return c.File("election-times-and-results.html")
+}
+
+func (a *App) resetVotingStatus() error {
+	_, err := a.db.Exec(`
+        UPDATE users SET has_voted = 0 
+        WHERE has_voted = 1 AND id IN (
+            SELECT user_id FROM user_votes 
+            WHERE voting_session_id = (
+                SELECT id FROM voting_sessions 
+                WHERE end_date < CURRENT_TIMESTAMP
+                ORDER BY end_date DESC LIMIT 1
+            )
+        )
+    `)
+	return err
 }
 
 func (a *App) initDB() error {
