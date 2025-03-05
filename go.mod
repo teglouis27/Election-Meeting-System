@@ -1,4 +1,4 @@
-module helloworld
+module github.com/Pongpipat-Keeratiyut/election-meeting
 
 go 1.21
 

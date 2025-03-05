@@ -364,7 +364,7 @@ async function submitSurvey() {
         } else {
             const error = await response.json();
             console.error('Survey submission failed:', error);
-            alert('เกิดข้อผิดพลาดในการส่งแบบสำรวจ');
+            alert('eror submission');
         }
     } catch (error) {
         console.error('Error submitting survey:', error);
