@@ -1,5 +1,5 @@
 import { setupClock, updateClock } from './clockModule.js';
-let currentMonth = 1;
+let currentMonth = 2;
 let currentYear = 2025;
 
 export function initializeElectionPage() {
