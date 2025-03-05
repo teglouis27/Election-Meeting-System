@@ -17,5 +17,17 @@
     "copyright": "Copyright2025",
     "comments": "Built using Wails (https://wails.io)"
   },
-  "icon": "build/windows/icon.ico"
+  "icon": "build/windows/icon.ico",
+  "linux": {
+    "identity": "com.romogi.electionmeeting",
+    "icon": "./build/appicon.png"
+  },
+  "windows": {
+    "webview2": "download",
+    "icon": "./build/windows/icon.ico",
+    "nsis": {
+      "installDirectory": "$PROGRAMFILES\\ElectionMeeting"
+    },
+    "manifest": "./build/windows/wails.exe.manifest"
+  }
 }
